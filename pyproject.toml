@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "softdesk"
+version = "0.1.0"
+description = "API Rest Full Django application"
+authors = ["Fovea4F <bernard.rouvreau@free.fr>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+django = "^5.0.1"
+requests = "^2.31.0"
+djangorestframework = "^3.14.0"
+djangorestframework-simplejwt = "^5.3.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
