@@ -11,7 +11,7 @@ class IsAuthenticated(BasePermission):
 class IsAdminAuthenticated(BasePermission):
     def has_permission(self, request, view):
         # Ne donne l’accès qu’aux utilisateurs authentifiés faisant partie du Staff
-        return bool(request.user and request.user.is_authenticated and request.user.is_superuser)
+        return bool(request.user and request.user.is_authenticated and request.user.is_staff)
 
 
 class IsOwnerOrAdmin(BasePermission):

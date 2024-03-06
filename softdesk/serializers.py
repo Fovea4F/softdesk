@@ -85,6 +85,35 @@ class ProjectSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'author']
 
 
+class ProjectCreateSerializer(serializers.ModelSerializer):
+    '''Serializer for Projects entity    creation'''
+
+    class Meta:
+        model = Project
+        fields = ['id', 'name', 'contributors',
+                  'project_type', 'description', 'created_date']
+
+    def create(self, validated_data):
+        # Create the instance without saving it yet
+        author = self.context['request'].user
+        # Transform users list in users_id list
+        contributors = validated_data.pop('contributors')
+        contributors_ids = [contributor.id for contributor in contributors]
+        instance = Project.objects.create(**validated_data)
+        instance.contributors.set([author])
+        # add every contributor id present in the list
+        instance.contributors.add(*contributors_ids)
+        return instance
+
+
+class ProjectListSerializer(serializers.ModelSerializer):
+    # Limited information for Project List
+
+    class Meta:
+        model = Project
+        fields = ['id', 'name', 'author']
+
+
 class ProjectDetailSerializer(serializers.ModelSerializer):
     '''Serializer for Projects Detail'''
 
@@ -100,31 +129,3 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
             serializer.is_valid(raise_exception=True)
             self.perform_update(serializer)
             return Response(serializer.data)
-
-
-class ProjectCreateSerializer(serializers.ModelSerializer):
-    '''Serializer for Projects entity    creation'''
-
-    class Meta:
-        model = Project
-        fields = ['id', 'name', 'author', 'contributors',
-                  'project_type', 'description', 'created_date']
-
-        '''def create_(self, validated_data):
-            # Set the initial contributor as the author
-            validated_data['contributors'] = validated_data['author']
-
-            return super().create(validated_data)'''
-
-        def create(self, validated_data):
-            # Get the author from the validated data
-            author = validated_data['author']
-
-            # Create the instance without saving it yet
-            instance = Project.objects.create(**validated_data)
-
-            # If author is provided, add it to the contributors
-            if author:
-                instance.contributors.add(author)
-
-            return instance

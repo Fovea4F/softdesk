@@ -2,9 +2,11 @@ from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework_simplejwt.authentication import JWTTokenUserAuthentication
+
 from .models import CustomUser, Project
 from .serializers import CustomUserSerializer, CustomUserListSerializer
-from .serializers import ProjectSerializer, ProjectDetailSerializer, ProjectCreateSerializer
+from .serializers import ProjectCreateSerializer, ProjectListSerializer, ProjectDetailSerializer, ProjectSerializer
 from .permissions import IsOwnerOrAdmin, IsAuthenticated, IsAuthor, IsContributor
 
 
@@ -55,13 +57,14 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         instance = get_object_or_404(self.queryset, pk=pk)
         if instance != request.user:
             return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-        serializer = self.get_serializer(instance, context={'request': request})
+        serializer = self.get_serializer(
+            instance, context={'request': request})
         return Response(serializer.data)
 
     def destroy(self, request, pk=None):
         instance = self.get_object()
-        '''if instance != request.user:
-            return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)'''
+        if instance != request.user:
+            return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
         if instance is not None:
             instance.delete()
             return Response({'message': ('Destroy action ok')}, status=status.HTTP_204_NO_CONTENT)
@@ -74,58 +77,55 @@ class ProjectViewSet(MultipleSerializerMixin, viewsets.ReadOnlyModelViewSet):
     serializer_class = ProjectSerializer
     detail_serializer_class = ProjectDetailSerializer
     create_serializer_class = ProjectCreateSerializer
+    serializer_list_class = ProjectListSerializer
     # Basic permission needed to permit Project creation
     permission_class = [IsAuthenticated]
 
     def get_serializer_class(self):
+        if self.action == 'list':
+            return ProjectListSerializer
         if self.action == 'retrieve':
             return ProjectDetailSerializer
         elif self.action == 'create':
             return ProjectCreateSerializer
+        print('toto')
         return ProjectSerializer
 
     def get_permissions(self):
-        if self.action == ['destroy']:
-            self.permission_classes = [IsAuthor]
+        if self.action == 'create':
+            self.permission_class = [IsAuthenticated]
+        if self.action == 'list':
+            self.permission_class = [IsContributor]
+        if self.action == 'destroy':
+            self.permission_class = [IsAuthor]
         elif self.action == ['update', 'partial_update']:
-            self.permission_classes = [IsContributor]
+            self.permission_class = [IsContributor]
         return super().get_permissions()
 
-
-    '''def list(self, request, *args, **kwargs):
-        # Add 'POST' to the list of allowed methods for the list page
-        self.http_method_names.append('post')
-        return super().list(request, *args, **kwargs)'''
-
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        serializer = self.get_serializer(
+            data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        headers = self.get_success_headers(serializer.validated_data)
-        return Response(serializer.validated_data, status=status.HTTP_201_CREATED, headers=headers)
+        # set connected user as author
+        serializer.save(author=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    def destroy(self, instance):
-        if instance.author != self.request.
-        project = self.get_object()
-        instance.delete()
-        return Response({'message': ('Item deleted')}, status=status.HTTP_204_NO_CONTENT)
+    def list(self, request):
+        queryset = self.get_queryset().filter(contributors__in=[request.user])
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(status=status.HTTP_202_ACCEPTED)
 
-class ProjectCreateViewSet(viewsets.ViewSet):
-
-    queryset = Project.objects.all()
-    serializer_class = ProjectCreateSerializer
-
-    '''def create(self, request):
-        serializer = ProjectCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=201)
-        return Response(serializer.errors, status=400)'''
-
-    def perform_create(self, serializer):
-        contributors_data = self.request.data.get('author', [])
-        instance = serializer.save()
-        # Set the contributors for the instance
-        instance.contributors.set(contributors_data)
-        instance.save()
+    def destroy(self, request, pk=None):
+        instance = self.get_object()
+        if instance is not None:
+            instance.delete()
+            return Response({'message': ('Destroy action ok')}, status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response({'Message': ('Instance not found')}, status=status.HTTP_404_NOT_FOUND)

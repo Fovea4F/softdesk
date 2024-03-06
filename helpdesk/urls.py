@@ -21,7 +21,7 @@ from rest_framework.routers import SimpleRouter
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from softdesk.views import CustomUserViewSet, ProjectListViewSet, ProjectCreateViewSet
+from softdesk.views import CustomUserViewSet, ProjectViewSet
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -41,7 +41,7 @@ schema_view = get_schema_view(
 
 router = SimpleRouter()
 router.register('users', CustomUserViewSet, basename='user')
-router.register('project', ProjectListViewSet, basename='project')
+router.register('project', ProjectViewSet, basename='project')
 # router.register('project_create', ProjectCreateViewSet, basename='project-create')
 
 urlpatterns = [
