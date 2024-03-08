@@ -28,18 +28,12 @@ class Project(models.Model):
     project_type = models.CharField(max_length=50, choices=PROJECT_TYPES, default=None, null=False)
     description = models.CharField(max_length=500, null=False, blank=False)
     created_date = models.DateTimeField(auto_now_add=True)
-    '''def save(self, *args, **kwargs):
 
-        def is_author_in_contributions(self, author_id):
-            # Check if the author's ID exists in the contributors ManyToManyField of the model instance
-            author_exists = self.contributors.filter(id=author_id).exists()
-            return author_exists
+    def save(self, *args, **kwargs):
 
-        super().save(*args, **kwargs)
-
-        if self.pk:
-            if not is_author_in_contributions(self, self.author_id):
-                # if self.author_id not in self.contributors.all():
-                self.contributors.set(self.author_id)
-
-                super().save()'''
+        if self.pk and self.contributors != None:  # Si l'instance n'existe pas encore dans la base de données
+            self.contributors.add(self.author.id)
+        else:
+            self.contributors.set(self.author.id)
+            # Ajouter l'auteur à la liste des contributeurs
+        super(Project, self).save(*args, **kwargs)

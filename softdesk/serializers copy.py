@@ -97,9 +97,20 @@ class ProjectSerializer(serializers.ModelSerializer):
         instance.contributors.add(*contributors_ids)
         return instance
 
+    def update(self, validated_data, context):
+        # Create the instance without saving it yet
+        # author = self.context['request'].user
+        # Transform users list in users_id list
+        contributors = validated_data.pop('contributors')
+        contributors_ids = [contributor.id for contributor in contributors]
+        instance = Project.objects.create(**validated_data)
+        # add every contributor id present in the list
+        instance.contributors.add(*contributors_ids)
+        return instance
+
 
 class ProjectListSerializer(serializers.ModelSerializer):
-    ''' Limited information for Project List '''
+    # Limited information for Project List
 
     class Meta:
         model = Project
@@ -114,11 +125,10 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'author', 'contributors',
                   'project_type', 'description', 'created_date']
 
-
-class ProjectUpdateSerializer(serializers.ModelSerializer):
-    '''Serializer for Projects Update'''
-
-    class Meta:
-        model = Project
-        fields = ['id', 'name', 'author', 'project_type',
-                  'description', 'created_date']
+        def update(self, request, *args, **kwargs):
+            instance = self.get_object()
+            serializer = self.get_serializer(
+                instance, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            return Response(serializer.data)

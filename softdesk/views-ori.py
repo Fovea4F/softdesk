@@ -3,12 +3,12 @@ from rest_framework import viewsets, status, permissions
 from rest_framework import generics
 from rest_framework.response import Response
 from .models import CustomUser
-from . import serializers1
+from . import serializers
 
 from django.contrib.auth import get_user_model
 
 
-'''class MultipleSerializerMixin:
+class MultipleSerializerMixin:
 
     detail_serializer_class = None
 
@@ -154,21 +154,3 @@ class TestViewSet(viewsets.ModelViewSet):
                 return Response(serializer.data)
             else:
                 return Response({'details': 'invalid_data'})
-'''
-
-
-class DetailApiView(viewsets.ModelViewSet):
-
-    queryset = CustomUser.objects.all()
-    serializer_class = serializers1.CustomUserListSerializer
-
-
-class CreateApiView(generics.CreateAPIView):
-
-    queryset = CustomUser.objects.all()
-    serializer_class = serializers1.CustomUserListSerializer
-
-
-class CustomUserViewSetNew(viewsets.ModelViewSet):
-    queryset = CustomUser.objects.all()
-    serializer_class = serializers1.CustomUser
