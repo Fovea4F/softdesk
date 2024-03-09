@@ -31,9 +31,11 @@ class Project(models.Model):
 
     def save(self, *args, **kwargs):
 
-        if self.pk and self.contributors != None:  # Si l'instance n'existe pas encore dans la base de données
+        if self.pk and self.contributors is not None:  # Si l'instance n'existe pas encore dans la base de données
             self.contributors.add(self.author.id)
         else:
-            self.contributors.set(self.author.id)
             # Ajouter l'auteur à la liste des contributeurs
-        super(Project, self).save(*args, **kwargs)
+            super(Project, self).save(*args, **kwargs)
+            self.contributors.add(self.author)
+            # super(Project, self).save(*args, **kwargs)
+            print('toto')

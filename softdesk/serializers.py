@@ -1,7 +1,5 @@
 from rest_framework import serializers
 from datetime import date
-from rest_framework.response import Response
-
 from .models import CustomUser, Project
 
 
