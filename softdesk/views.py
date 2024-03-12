@@ -1,13 +1,15 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
 from rest_framework.response import Response
+from django.core.exceptions import ObjectDoesNotExist
+from rest_framework.decorators import action
 # from django.core.exceptions import ProtectedError
 from django.db.models.deletion import ProtectedError
 
 from .models import CustomUser, Project
 from .serializers import CustomUserSerializer, CustomUserListSerializer
 # from .serializers import ProjectSerializer, ProjectListSerializer, ProjectDetailSerializer
-from .serializer import serializers
+from . import project_serializers
 from .permissions import IsAuthenticated, IsAuthor, IsContributor
 
 
@@ -82,20 +84,20 @@ class CustomUserViewSet(viewsets.ModelViewSet):
 
 class ProjectViewSet(MultipleSerializerMixin, viewsets.ReadOnlyModelViewSet):
     queryset = Project.objects.all()
-    serializer_class = serializers.ProjectSerializer
-    detail_serializer_class = serializers.ProjectDetailSerializer
-    update_serializer_class = serializers.ProjectUpdateSerializer
-    list_serializer_class = serializers.ProjectListSerializer
+    serializer_class = project_serializers.ProjectSerializer
+    detail_serializer_class = project_serializers.ProjectDetailSerializer
+    update_serializer_class = project_serializers.ProjectUpdateSerializer
+    list_serializer_class = project_serializers.ProjectListSerializer
     permission_class = [IsAuthenticated]
 
     def get_serializer_class(self):
         if self.action == 'list':
-            return serializers.ProjectListSerializer
+            return project_serializers.ProjectListSerializer
         if self.action == 'retrieve':
-            return serializers.ProjectDetailSerializer
+            return project_serializers.ProjectDetailSerializer
         if self.action == 'update':
-            return serializers.ProjectUpdateSerializer
-        return serializers.ProjectSerializer
+            return project_serializers.ProjectUpdateSerializer
+        return project_serializers.ProjectSerializer
 
     def get_permissions(self):
         if self.action == 'create':
@@ -124,13 +126,11 @@ class ProjectViewSet(MultipleSerializerMixin, viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def update(self, request, pk=None, *args, **kwargs):
-        # A faire
         project = get_object_or_404(Project, id=pk)
         user = get_object_or_404(CustomUser, id=self.request.user.id)
         if user != project.author:
             return Response({'error': 'you are not project author'}, status=status.HTTP_401_UNAUTHORIZED)
         serializer = self.get_serializer(project, data=request.data, partial=True)
-        # serializer.validated_data.pop('contributors')
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
@@ -147,7 +147,6 @@ class ProjectViewSet(MultipleSerializerMixin, viewsets.ReadOnlyModelViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, pk=None, *args, **kwargs):
-        # A faire
         project = get_object_or_404(Project, id=pk)
         user = get_object_or_404(CustomUser, id=self.request.user.id)
         if user != project.author:
@@ -168,15 +167,72 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
         By design, Project Author is always in contributors list'''
 
     queryset = Project.objects.all()
-    serializer_class = serializers.ProjectContributorSerializer
+    serializer_class = project_serializers.ProjectContributorSerializer
+    permission_classes = [IsAuthor]
 
-    def contributor_add(self, request, pk=None, *args, **kwargs):
-        project = get_object_or_404(Project, id=pk)
-        user = get_object_or_404(CustomUser, id=self.request.user.id)
-        if user != project.author:
-            return Response({'error': 'you are not project author'}, status=status.HTTP_401_UNAUTHORIZED)
+    '''def get_permissions(self):
+        if self.action == 'retrieve':
+            self.permission_class = [IsAuthor]
+        if self.action == 'update':
+            self.permission_class = [IsAuthor]
+        return super().get_permissions()'''
+
+    def check_project_exist(project_id):
+        try:
+            project = Project.objects.get(pk=project_id)
+        except ObjectDoesNotExist:
+            return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
+        return project
+
+    @action(detail=False, methods=['post'], url_path='add')
+    def contributor_add(self, request, project_id, pk=None):
+        contributor_id = request.data.get('contributor_id')
+
+        if contributor_id == None:
+            return Response({'error: no contributor id found in request'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
         else:
-            serializer = self.get_serializer(project, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+            try:
+                contributor = CustomUser.objects.get(pk=contributor_id)
+            except CustomUser.DoesNotExist:
+                return Response({f'error: Contributor {contributor_id} does not exist'},
+                                status=status.HTTP_404_NOT_FOUND)
+
+            project.contributors.add(contributor)
+            project.save()
+
+            serializer = self.get_serializer(project)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='delete')
+    def contributor_delete(self, request, project_id, pk=None):
+        contributor_id = request.data.get('contributor_id')
+
+        if contributor_id == None:
+            return Response({'error: no contributor id found in request'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            try:
+                contributor = CustomUser.objects.get(pk=contributor_id)
+            except CustomUser.DoesNotExist:
+                return Response({f'error: Contributor {contributor_id} does not exist'},
+                                status=status.HTTP_404_NOT_FOUND)
+            if not project.contributors.filter(id=contributor_id).exists():
+                # if contributor_id not in project.contributors.all().values_list('id', flat=True):
+                return Response(f'error: Contributor {contributor_id} not in project list',
+                                status=status.HTTP_404_NOT_FOUND)
+            elif int(contributor_id) == project.author_id:
+                return Response({'error: You cannot suppress project author from contributors list'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            else:
+                project.contributors.remove(contributor)
+                project.save()
+
+            serializer = self.get_serializer(project)
+            return Response(serializer.data, status=status.HTTP_200_OK)

@@ -10,7 +10,6 @@ class CustomUserSerializer(serializers.ModelSerializer):
         write_only=True, style={'input_type': 'password'})
     can_be_contacted = serializers.BooleanField(default=False)
     can_be_shared = serializers.BooleanField(default=False)
-    # authorized_age = serializers.IntegerField()
 
     class Meta:
         model = CustomUser

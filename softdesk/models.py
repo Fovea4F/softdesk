@@ -37,5 +37,32 @@ class Project(models.Model):
             # Ajouter l'auteur à la liste des contributeurs
             super(Project, self).save(*args, **kwargs)
             self.contributors.add(self.author)
-            # super(Project, self).save(*args, **kwargs)
-            print('toto')
+
+
+class Issue(models.Model):
+
+    PRIORITY = [
+        ('LOW', 'LOW'),
+        ('MEDIUM', 'MEDIUM'),
+        ('HIGH', 'HIGH')
+    ]
+
+    ISSUE_TYPE = [
+        ('BUG', 'BUG'),
+        ('FEATURE', 'FEATURE'),
+        ('TASK', 'TASK')
+    ]
+
+    STATUS = [
+        ('To Do', 'To Do'),
+        ('In Progress', 'In Progress'),
+        ('Finished', 'Finished')
+    ]
+
+    name = models.CharField(max_length=128, unique=True, null=False, blank=False)
+    assigned_contributor = models.ForeignKey(to=CustomUser, on_delete=models.CASCADE)
+    issue_type = models.CharField(max_length=50, choices=ISSUE_TYPE, default=None, null=False)
+    priority = models.CharField(max_length=50, choices=PRIORITY, default='LOW', null=False)
+    issue_type = models.CharField(max_length=50, choices=STATUS, default='To Do', null=False)
+    description = models.CharField(max_length=500, null=False, blank=False)
+    created_date = models.DateTimeField(auto_now_add=True)
