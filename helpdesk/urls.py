@@ -41,10 +41,12 @@ schema_view = get_schema_view(
 )
 
 router = SimpleRouter()
-router.register('users', CustomUserViewSet, basename='user')
+router.register('users', CustomUserViewSet, basename='users')
 router.register('project', ProjectViewSet, basename='project')
 router.register(r'project/(?P<project_id>\d+)/contributors', ProjectContributorsViewSet,
                 basename='project-contributors')
+'''path('api/projects/<int:pk>/contributors/add/', ProjectViewSet.as_view({'post': 'contributor_add'}),
+     name='project-contributor-add')'''
 
 
 urlpatterns = [
