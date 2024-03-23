@@ -5,6 +5,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
+
     dependencies = [
         ("softdesk", "0011_rename_contributor_project_contributors"),
     ]
@@ -26,5 +27,11 @@ class Migration(migrations.Migration):
             model_name="project",
             name="name",
             field=models.CharField(max_length=128, unique=True),
+        ),
+        migrations.DeleteModel(
+            name="Issue",
+        ),
+        migrations.DeleteModel(
+            name="Comment",
         ),
     ]

@@ -1,16 +1,14 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, permissions
+from rest_framework.mixins import UpdateModelMixin, RetrieveModelMixin
 from rest_framework.response import Response
-from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.decorators import action
-# from django.core.exceptions import ProtectedError
 from django.db.models.deletion import ProtectedError
 
-from .models import CustomUser, Project
+from .models import CustomUser, Project, Issue
 from .serializers import CustomUserSerializer, CustomUserListSerializer
-# from .serializers import ProjectSerializer, ProjectListSerializer, ProjectDetailSerializer
-from . import project_serializers
-from .permissions import IsAuthenticated, IsAuthor, IsContributor
+from . import project_serializers, issue_serializers
+from .permissions import IsAuthor, IsContributor, IsAuthorOrAssignedContributor
 
 
 class MultipleSerializerMixin:
@@ -27,19 +25,14 @@ class CustomUserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
     serializer_class = CustomUserSerializer
     serializer_list_class = CustomUserListSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_permissions(self):
         if self.action == 'create':
             return []
-        elif self.action == 'list':
-            self.permission_class = [IsAuthenticated]
-        if self.action == 'destroy':
-            self.permission_class = [IsAuthor]
-        elif self.action == 'update':
-            self.permission_class = [IsAuthor]
-        elif self.action == 'retrieve':
-            self.permission_class = [IsAuthor]
+        elif self.action == ['list', 'update', 'retrieve', 'destroy']:
+            self.permission_classes = [permissions.IsAuthenticated]
+
         return super().get_permissions()
 
     def get_serializer_class(self):
@@ -58,7 +51,8 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         if instance != request.user:
             return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-        serializer = self.get_serializer(instance, data=request.data)
+        serializer = self.get_serializer(
+            instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
@@ -82,45 +76,55 @@ class CustomUserViewSet(viewsets.ModelViewSet):
             return Response({'Message': ('Instance not found')}, status=status.HTTP_404_NOT_FOUND)
 
 
-class ProjectViewSet(MultipleSerializerMixin, viewsets.ReadOnlyModelViewSet):
+class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
     serializer_class = project_serializers.ProjectSerializer
     detail_serializer_class = project_serializers.ProjectDetailSerializer
-    update_serializer_class = project_serializers.ProjectUpdateSerializer
     list_serializer_class = project_serializers.ProjectListSerializer
-    permission_class = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_class(self):
-        if self.action == 'list':
+        # associate a specific Null Fields Serializer if not authenticated
+        if not self.request.user.is_authenticated:
+            return project_serializers.ProjectNullSerializer
+        elif self.action == 'list':
             return project_serializers.ProjectListSerializer
-        if self.action == 'retrieve':
+        elif self.action == 'retrieve':
             return project_serializers.ProjectDetailSerializer
-        if self.action == 'update':
+        elif self.action == 'update':
             return project_serializers.ProjectUpdateSerializer
         return project_serializers.ProjectSerializer
 
     def get_permissions(self):
         if self.action == 'create':
-            self.permission_class = [IsAuthenticated]
+            self.permission_classes = [permissions.IsAuthenticated]
         elif self.action == 'list':
-            self.permission_class = [IsContributor]
+            self.permission_classes = [IsContributor]
         elif self.action == 'retrieve':
-            self.permission_class = [IsContributor]
+            self.permission_classes = [IsContributor]
         elif self.action == 'destroy':
-            self.permission_class = [IsAuthor]
+            self.permission_classes = [IsAuthor]
         elif self.action == 'update':
-            self.permission_class = [IsAuthor]
+            self.permission_classes = [IsAuthor]
 
         return super().get_permissions()
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data, context={'request': request})
+        if request.user:
+            data = request.data
+            data['contributors'].append(request.user.pk)
+            data['author'] = request.user.pk
+        serializer = self.get_serializer(data=data, context={'request': request})
+
         serializer.is_valid(raise_exception=True)
+        self.check_permissions(request)
         # set connected user as author
         serializer.save(author=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def list(self, request):
+        if request.user.id is None:
+            return Response({'error': 'not authorized'}, status=status.HTTP_401_UNAUTHORIZED)
         queryset = self.get_queryset().filter(contributors__in=[request.user])
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -132,18 +136,19 @@ class ProjectViewSet(MultipleSerializerMixin, viewsets.ReadOnlyModelViewSet):
             return Response({'error': 'you are not project author'}, status=status.HTTP_401_UNAUTHORIZED)
         serializer = self.get_serializer(project, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def retrieve(self, request, pk=None, *args, **kwargs):
         project = get_object_or_404(Project, id=pk)
         user = get_object_or_404(CustomUser, id=self.request.user.id)
         if project and user:
             contributors = project.contributors.all()
-            if user not in contributors:
-                return Response({'error': 'you are not project contributor'}, status=status.HTTP_401_UNAUTHORIZED)
+            # Verify if connected user is author or contributor
+            if user not in contributors and user != project.author:
+                return Response({'error': 'you are not project author or contributor'}, status=status.HTTP_401_UNAUTHORIZED)
             serializer = self.get_serializer(project)
-            # serializer.is_valid(raise_exception=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, pk=None, *args, **kwargs):
@@ -170,25 +175,11 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
     serializer_class = project_serializers.ProjectContributorSerializer
     permission_classes = [IsAuthor]
 
-    '''def get_permissions(self):
-        if self.action == 'retrieve':
-            self.permission_class = [IsAuthor]
-        if self.action == 'update':
-            self.permission_class = [IsAuthor]
-        return super().get_permissions()'''
-
-    def check_project_exist(project_id):
-        try:
-            project = Project.objects.get(pk=project_id)
-        except ObjectDoesNotExist:
-            return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
-        return project
-
     @action(detail=False, methods=['post'], url_path='add')
     def contributor_add(self, request, project_id, pk=None):
         contributor_id = request.data.get('contributor_id')
 
-        if contributor_id == None:
+        if contributor_id is None:
             return Response({'error: no contributor id found in request'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             project = Project.objects.get(id=project_id)
@@ -211,7 +202,7 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
     def contributor_delete(self, request, project_id, pk=None):
         contributor_id = request.data.get('contributor_id')
 
-        if contributor_id == None:
+        if contributor_id is None:
             return Response({'error: no contributor id found in request'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             project = Project.objects.get(id=project_id)
@@ -221,10 +212,9 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
             try:
                 contributor = CustomUser.objects.get(pk=contributor_id)
             except CustomUser.DoesNotExist:
-                return Response({f'error: Contributor {contributor_id} does not exist'},
+                return Response({f'error: {contributor_id} is not contributor'},
                                 status=status.HTTP_404_NOT_FOUND)
             if not project.contributors.filter(id=contributor_id).exists():
-                # if contributor_id not in project.contributors.all().values_list('id', flat=True):
                 return Response(f'error: Contributor {contributor_id} not in project list',
                                 status=status.HTTP_404_NOT_FOUND)
             elif int(contributor_id) == project.author_id:
@@ -236,3 +226,85 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
 
             serializer = self.get_serializer(project)
             return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
+    '''Manage project Issues.
+        After creation, issue is owned by author,
+        witch is initial creator and default designed contributor'''
+
+    queryset = Issue.objects.all()
+    serializer_class = issue_serializers.IssueSerializer
+    permission_classes = [IsAuthor]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve', 'update']:
+            perm = [IsAuthorOrAssignedContributor]
+        elif self.action == 'destroy':
+            perm = [IsAuthor]
+        else:
+            perm = []
+        return [permission() for permission in perm]
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return issue_serializers.IssueListSerializer
+        if self.action == 'create':
+            return issue_serializers.IssueCreateSerializer
+        return issue_serializers.IssueSerializer
+
+    def create(self, request, *args, **kwargs):
+        try:
+            Project.objects.get(id=self.kwargs['project_pk'])
+        except Project.DoesNotExist:
+            return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.get_serializer(data=self.request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(author=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def list(self, request, *args, **kwargs):
+        # give list of every assigned Issue for the connected user about the project
+        project_id = kwargs.get('project_pk')
+        project = get_object_or_404(Project, pk=project_id)
+        # verify if connected user is project author or in issues assigned_contributor
+        if (request.user.pk != project.author.pk
+                and not project.issues_list.filter(assigned_contributor=request.user.pk).exists()):
+            return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Now, we know, generate queryset result of all issues about project_id where connected user is assigned user
+        if request.user.pk == project.author.pk:
+            queryset = project.issues_list.filter(author=request.user.pk)
+        else:
+            queryset = project.issues_list.filter(
+                assigned_contributor=request.user.pk)
+        # Serialize issues and bring response
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        project_id = kwargs.get('project_pk')
+        project = get_object_or_404(Project, pk=project_id)
+        # allow access to every user author or in contributors list
+        if request.user.pk != project.author.pk and not project.contributors.filter(id=request.user.pk).exists():
+            return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+        queryset = Issue.objects.get(pk=pk)
+
+        serializer = self.get_serializer(queryset)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def update(self, request, pk=None, *args, **kwargs):
+        issue = get_object_or_404(Issue, id=pk)
+        user = get_object_or_404(CustomUser, id=self.request.user.id)
+        self.permission_classes = [IsAuthor, IsContributor]
+        if issue and user:
+            assigned_contributor = issue.assigned_contributor
+            if user != assigned_contributor and user != issue.author:
+                return Response({'error': 'Not authorized'}, status=status.HTTP_401_UNAUTHORIZED)
+            serializer = self.get_serializer(instance=issue, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Invalid request'}, status=status.HTTP_400_BAD_REQUEST)

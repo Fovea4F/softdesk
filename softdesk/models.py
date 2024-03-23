@@ -31,8 +31,9 @@ class Project(models.Model):
 
     def save(self, *args, **kwargs):
 
-        if self.pk and self.contributors is not None:  # Si l'instance n'existe pas encore dans la base de données
-            self.contributors.add(self.author.id)
+        if self.pk:  
+            # Si l'instance existe dans la base de données, force l'ajout de l'auteur dans la liste des contributeurs
+            self.contributors.add(self.author)
         else:
             # Ajouter l'auteur à la liste des contributeurs
             super(Project, self).save(*args, **kwargs)
@@ -60,9 +61,11 @@ class Issue(models.Model):
     ]
 
     name = models.CharField(max_length=128, unique=True, null=False, blank=False)
-    assigned_contributor = models.ForeignKey(to=CustomUser, on_delete=models.CASCADE)
+    author = models.ForeignKey(to=CustomUser, on_delete=models.CASCADE, related_name='issues_authored')
+    assigned_contributor = models.ForeignKey(to=CustomUser, on_delete=models.CASCADE, related_name='issues_assigned')
+    project = models.ForeignKey(to=Project, on_delete=models.CASCADE, related_name='issues_list')
     issue_type = models.CharField(max_length=50, choices=ISSUE_TYPE, default=None, null=False)
     priority = models.CharField(max_length=50, choices=PRIORITY, default='LOW', null=False)
-    issue_type = models.CharField(max_length=50, choices=STATUS, default='To Do', null=False)
+    status = models.CharField(max_length=50, choices=STATUS, default='To Do', null=False)
     description = models.CharField(max_length=500, null=False, blank=False)
     created_date = models.DateTimeField(auto_now_add=True)

@@ -22,6 +22,7 @@ from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from softdesk.views import CustomUserViewSet, ProjectViewSet, ProjectContributorsViewSet
+from softdesk.views import IssueViewSet
 # , ProjectCreateViewSet
 
 schema_view = get_schema_view(
@@ -45,9 +46,7 @@ router.register('users', CustomUserViewSet, basename='users')
 router.register('project', ProjectViewSet, basename='project')
 router.register(r'project/(?P<project_id>\d+)/contributors', ProjectContributorsViewSet,
                 basename='project-contributors')
-'''path('api/projects/<int:pk>/contributors/add/', ProjectViewSet.as_view({'post': 'contributor_add'}),
-     name='project-contributor-add')'''
-
+router.register(r'project/(?P<project_pk>\d+)/issue', IssueViewSet, basename='issue')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -62,4 +61,4 @@ urlpatterns = [
          cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc',
          cache_timeout=0), name='schema-redoc'),
-    ]
+]
