@@ -8,7 +8,8 @@ class IssueSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Issue
-        fields = ['name', 'author', 'assigned_contributor', 'project', 'issue_type', 'priority', 'status', 'description', 'created_date']
+        fields = ['name', 'author', 'assigned_contributor', 'project', 'issue_type', 'priority',
+                  'status', 'description', 'created_date']
 
     def validate_assigned_contributor(self, value):
         '''Verify if assigned_contributor is valid for this Issue'''

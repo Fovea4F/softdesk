@@ -18,23 +18,6 @@ class ProjectUpdateSerializer(serializers.ModelSerializer):
         model = Project
         fields = ['id', 'name', 'author', 'project_type', 'description']
 
-    def validate(self, data):
-        return data
-
-'''    def validate_contributors(self, value):
-        # Manage ManyToMany Field update
-        print('------------------------------------------')
-        print(f'self : {self}')
-        print('------------------------------------------')
-        print(f'value : {value}')
-        print('------------------------------------------')
-        contributors = value.pop('contributors', None)
-        print(contributors)
-        if contributors is not None:
-            self.contributors.set(contributors)
-
-        return value'''
-
 
 class ProjectListSerializer(serializers.ModelSerializer):
     ''' Limited information for Project List '''

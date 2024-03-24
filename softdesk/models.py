@@ -31,12 +31,9 @@ class Project(models.Model):
 
     def save(self, *args, **kwargs):
 
-        if self.pk:  
-            # Si l'instance existe dans la base de données, force l'ajout de l'auteur dans la liste des contributeurs
-            self.contributors.add(self.author)
-        else:
-            # Ajouter l'auteur à la liste des contributeurs
-            super(Project, self).save(*args, **kwargs)
+        super(Project, self).save(*args, **kwargs)
+        # Force project author to be part of contributors users list
+        if not self.contributors.filter(pk=self.author.pk).exists():
             self.contributors.add(self.author)
 
 

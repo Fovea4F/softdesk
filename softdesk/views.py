@@ -81,6 +81,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
     serializer_class = project_serializers.ProjectSerializer
     detail_serializer_class = project_serializers.ProjectDetailSerializer
     list_serializer_class = project_serializers.ProjectListSerializer
+    update_serializer = project_serializers.ProjectUpdateSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_class(self):
@@ -136,7 +137,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return Response({'error': 'you are not project author'}, status=status.HTTP_401_UNAUTHORIZED)
         serializer = self.get_serializer(project, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -147,7 +147,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
             contributors = project.contributors.all()
             # Verify if connected user is author or contributor
             if user not in contributors and user != project.author:
-                return Response({'error': 'you are not project author or contributor'}, status=status.HTTP_401_UNAUTHORIZED)
+                return Response({'error': 'you are not project author or contributor'},
+                                status=status.HTTP_401_UNAUTHORIZED)
             serializer = self.get_serializer(project)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
