@@ -5,9 +5,9 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.db.models.deletion import ProtectedError
 
-from .models import CustomUser, Project, Issue
+from .models import CustomUser, Project, Issue, Comment
 from .serializers import CustomUserSerializer, CustomUserListSerializer
-from . import project_serializers, issue_serializers
+from . import project_serializers, issue_serializers, comment_serializers
 from .permissions import IsAuthor, IsContributor, IsAuthorOrAssignedContributor
 
 
@@ -309,3 +309,53 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
             return Response(serializer.data, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Invalid request'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CommentViewSet(viewsets.ModelViewSet):
+    '''Comment are tickets written by any Project contributor'''
+
+    queryset = Comment.objects.all()
+    serializer_class = comment_serializers.CommentSerializer
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve', 'update']:
+            perm = [IsAuthorOrAssignedContributor]
+        elif self.action == 'destroy':
+            perm = [IsAuthor]
+        else:
+            perm = []
+        return [permission() for permission in perm]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['author'] = self.request.user
+        context['issue_pk'] = self.kwargs['issue_pk']
+        context['request'] = self.request
+        return context
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return comment_serializers.CommentListSerializer
+        if self.action == 'create':
+            return comment_serializers.CommentSerializer
+        return comment_serializers.CommentSerializer
+
+    def create(self, request, *args, **kwargs):
+        try:
+            Issue.objects.get(id=self.kwargs['issue_pk'])
+        except Issue.DoesNotExist:
+            return Response({'error': 'Issue does not exist'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    '''def list(self, request, *args, **kwargs):
+        # give list of every assigned Issue for the connected user about the project
+        project_id = kwargs.get('project_pk')
+        project = get_object_or_404(Project, pk=project_id)
+        # verify if connected user is project author or in issues assigned_contributor
+        if (request.user.pk != project.author.pk
+                and not project.issues_list.filter(assigned_contributor=request.user.pk).exists()):
+            return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)'''

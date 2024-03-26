@@ -22,7 +22,7 @@ from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from softdesk.views import CustomUserViewSet, ProjectViewSet, ProjectContributorsViewSet
-from softdesk.views import IssueViewSet
+from softdesk.views import IssueViewSet, CommentViewSet
 # , ProjectCreateViewSet
 
 schema_view = get_schema_view(
@@ -47,6 +47,7 @@ router.register('project', ProjectViewSet, basename='project')
 router.register(r'project/(?P<project_id>\d+)/contributors', ProjectContributorsViewSet,
                 basename='project-contributors')
 router.register(r'project/(?P<project_pk>\d+)/issue', IssueViewSet, basename='issue')
+router.register(r'issue/(?P<issue_pk>\d+)/comment', CommentViewSet, basename='comment')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

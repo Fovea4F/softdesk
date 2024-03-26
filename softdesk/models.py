@@ -1,4 +1,6 @@
+import uuid
 from django.db import models
+from django.urls import reverse
 from django.contrib.auth.models import AbstractUser
 
 
@@ -66,3 +68,20 @@ class Issue(models.Model):
     status = models.CharField(max_length=50, choices=STATUS, default='To Do', null=False)
     description = models.CharField(max_length=500, null=False, blank=False)
     created_date = models.DateTimeField(auto_now_add=True)
+
+
+class Comment(models.Model):
+
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, unique=True, editable=False)
+    author = models.ForeignKey(to=CustomUser, on_delete=models.CASCADE)
+    issue_ref = models.ForeignKey(to=Issue, on_delete=models.CASCADE, related_name='comments_list')
+    issue_url = models.URLField(editable=False)
+    description = models.CharField(max_length=500, null=False, blank=False)
+    created_date = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.issue_url == '':
+            self.issue_url = reverse('issue-detail', kwargs={'project_pk': self.issue_ref.project_id, 'pk': self.issue_ref.pk})
+            super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
