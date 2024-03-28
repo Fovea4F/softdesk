@@ -49,4 +49,4 @@ class IssueListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Issue
-        fields = ['id', 'author', 'name', 'issue_type', 'priority']
+        fields = ['id', 'author', 'name']
