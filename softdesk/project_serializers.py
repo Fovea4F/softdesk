@@ -26,8 +26,6 @@ class ProjectListSerializer(serializers.ModelSerializer):
         model = Project
         fields = ['id', 'name', 'author']
 
-    print('toto')
-
 
 class ProjectDetailSerializer(serializers.ModelSerializer):
     '''Serializer for Projects Detail'''

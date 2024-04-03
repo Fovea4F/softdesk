@@ -14,7 +14,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ['id', 'email', 'birthday', 'can_be_contacted',
-                  'can_be_shared', 'password', 'confirm_password']
+                  'can_be_shared', 'password', 'confirm_password', 'created_date']
 
     def validate_password(self, password):
         # verify if 2 given passwords match

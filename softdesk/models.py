@@ -10,6 +10,7 @@ class CustomUser(AbstractUser):
     can_be_contacted = models.BooleanField(default=False, null=False, verbose_name='Allowed contact')
     can_be_shared = models.BooleanField(default=False, null=False, verbose_name='Share data consent')
     email = models.EmailField(unique=True)
+    created_date = models.DateTimeField(auto_now_add=True)
 
     USERNAME_FIELD = 'email'  # indicates email as identifier in User Model
     REQUIRED_FIELDS = ['password', 'birthday', 'can_be_shared', 'can_be_contacted']
@@ -74,7 +75,6 @@ class Comment(models.Model):
 
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, unique=True, editable=False)
     author = models.ForeignKey(to=CustomUser, on_delete=models.CASCADE, related_name='comment_author')
-    in_charge = models.ForeignKey(to=CustomUser, on_delete=models.CASCADE, related_name='comment_in_charge')
     issue_ref = models.ForeignKey(to=Issue, on_delete=models.CASCADE, related_name='comment_list')
     issue_url = models.URLField(editable=False)
     description = models.CharField(max_length=500, null=False, blank=False)

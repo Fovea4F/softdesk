@@ -1,16 +1,15 @@
 from django.shortcuts import get_object_or_404
 from django.db.models.deletion import ProtectedError
 
-from rest_framework import viewsets, status, permissions
+from rest_framework import viewsets, status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.mixins import UpdateModelMixin, RetrieveModelMixin
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
 from . import customuser_serializers, project_serializers, issue_serializers, comment_serializers
 from .models import CustomUser, Project, Issue, Comment
-# from .serializers import CustomUserSerializer, CustomUserListSerializer
-from .permissions import IsAuthor, IsContributor, IsAuthorOrAssignedContributor
+from .permissions import IsAuthor, IsAuthorOrAssignedContributor
 
 
 class MultipleSerializerMixin:
@@ -27,13 +26,13 @@ class CustomUserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all()
     serializer_class = customuser_serializers.CustomUserSerializer
     serializer_list_class = customuser_serializers.CustomUserListSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
         if self.action == 'create':
             return []
         elif self.action == ['list', 'update', 'retrieve', 'destroy']:
-            self.permission_classes = [permissions.IsAuthenticated]
+            self.permission_classes = [IsAuthenticated]
 
         return super().get_permissions()
 
@@ -49,6 +48,21 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.validated_data)
         return Response(serializer.validated_data, status=status.HTTP_201_CREATED, headers=headers)
 
+    def list(self, request, *args, **kwargs):
+        queryset = CustomUser.objects.filter(is_active=True)
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+    def retrieve(self, request, pk=None):
+        instance = get_object_or_404(self.queryset, pk=pk)
+        if instance != request.user:
+            return Response({'error': 'Not authorized.'}, status=status.HTTP_401_UNAUTHORIZED)
+        serializer = self.get_serializer(
+            instance, context={'request': request})
+        return Response(serializer.data)
+
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         if instance != request.user:
@@ -56,21 +70,13 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(
             instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
+        serializer.save()
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
-
-    def retrieve(self, request, pk=None):
-        instance = get_object_or_404(self.queryset, pk=pk)
-        if instance != request.user:
-            return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-        serializer = self.get_serializer(
-            instance, context={'request': request})
-        return Response(serializer.data)
 
     def destroy(self, request, pk=None):
         instance = self.get_object()
         if instance != request.user:
-            return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': 'Not authorized.'}, status=status.HTTP_401_UNAUTHORIZED)
         if instance is not None:
             instance.delete()
             return Response({'message': ('Destroy action ok')}, status=status.HTTP_204_NO_CONTENT)
@@ -84,9 +90,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
     detail_serializer_class = project_serializers.ProjectDetailSerializer
     list_serializer_class = project_serializers.ProjectListSerializer
     update_serializer = project_serializers.ProjectUpdateSerializer
-    pagination_class = PageNumberPagination
     display_page_controls = True
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
         # associate a specific Null Fields Serializer if not authenticated
@@ -99,20 +104,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
         elif self.action == 'update':
             return project_serializers.ProjectUpdateSerializer
         return project_serializers.ProjectSerializer
-
-    '''def get_permissions(self):
-        if self.action == 'create':
-            self.permission_classes = [permissions.IsAuthenticated]
-        elif self.action == 'list':
-            self.permission_classes = [IsContributor]
-        elif self.action == 'retrieve':
-            self.permission_classes = [IsContributor]
-        elif self.action == 'destroy':
-            self.permission_classes = [IsAuthor]
-        elif self.action == 'update':
-            self.permission_classes = [IsAuthor]
-
-        return super().get_permissions()'''
 
     def create(self, request, *args, **kwargs):
         if request.user:
@@ -127,12 +118,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.save(author=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    def list(self, request):
+    def list(self, request, *args, **kwargs):
         if request.user.id is None:
             return Response({'error': 'not authorized'}, status=status.HTTP_401_UNAUTHORIZED)
         queryset = self.get_queryset().filter(contributors__in=[request.user])
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
 
     def update(self, request, pk=None, *args, **kwargs):
         project = get_object_or_404(Project, id=pk)
@@ -169,7 +162,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 error_message = f'not able to delete recorded data : {error}'
                 return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            return Response({'Message': ('Data not found')}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': ('Data not found')}, status=status.HTTP_404_NOT_FOUND)
 
 
 class ProjectContributorsViewSet(viewsets.ModelViewSet):
@@ -178,41 +171,43 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
 
     queryset = Project.objects.all()
     serializer_class = project_serializers.ProjectContributorSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     @action(detail=False, methods=['post'], url_path='add')
     def contributor_add(self, request, project_id, pk=None):
-        contributor_id = request.data.get('contributor_id')
-
-        if contributor_id is None:
-            return Response({'error: no contributor id found in request'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             project = Project.objects.get(id=project_id)
         except Project.DoesNotExist:
             return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user != project.author:
+            return Response({'error': 'you are not project author'}, status=status.HTTP_401_UNAUTHORIZED)
+        contributor_id = request.data.get('contributor_id')
+
+        if contributor_id is None:
+            return Response({'error: no contributor id found in request'}, status=status.HTTP_400_BAD_REQUEST)
         else:
             try:
                 contributor = CustomUser.objects.get(pk=contributor_id)
             except CustomUser.DoesNotExist:
                 return Response({f'error: Contributor {contributor_id} does not exist'},
                                 status=status.HTTP_404_NOT_FOUND)
-
             project.contributors.add(contributor)
             project.save()
-
             serializer = self.get_serializer(project)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='delete')
     def contributor_delete(self, request, project_id, pk=None):
-        contributor_id = request.data.get('contributor_id')
-
-        if contributor_id is None:
-            return Response({'error: no contributor id found in request'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             project = Project.objects.get(id=project_id)
         except Project.DoesNotExist:
             return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user != project.author:
+            return Response({'error': 'you are not project author'}, status=status.HTTP_401_UNAUTHORIZED)
+        contributor_id = request.data.get('contributor_id')
+
+        if contributor_id is None:
+            return Response({'error: no contributor id found in request'}, status=status.HTTP_400_BAD_REQUEST)
         else:
             try:
                 contributor = CustomUser.objects.get(pk=contributor_id)
@@ -240,7 +235,13 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
 
     queryset = Issue.objects.all()
     serializer_class = issue_serializers.IssueSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
+    # pagination_class = PageNumberPagination
+
+    def get_queryset(self):
+        project_pk = self.kwargs.get('project_pk')
+        queryset = self.queryset.filter(project_id=project_pk)
+        return queryset
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve', 'update']:
@@ -272,24 +273,25 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
     def list(self, request, *args, **kwargs):
         ''' give list of every assigned Issue for the connected user about the project'''
 
-        project_id = kwargs.get('project_pk')
-        project = get_object_or_404(Project, pk=project_id)
+        project_pk = kwargs.get('project_pk')
+        project = get_object_or_404(Project, pk=project_pk)
         # verify if connected user is project author or in issues assigned_contributor
         if (request.user.pk != project.author.pk
                 and not project.issues_list.filter(assigned_contributor=request.user.pk).exists()):
             # The above code is returning a response with a JSON object containing an error message
             # indicating that access is not authorized, along with a status code of 403 (Forbidden).
-            return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': 'access not authorized.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         # Now, we know, generate queryset result of all issues about project_id where connected user is assigned user
-        if request.user.pk == project.author.pk:
-            queryset = project.issues_list.filter(author=request.user.pk)
-        else:
-            queryset = project.issues_list.filter(
-                assigned_contributor=request.user.pk)
         # Serialize issues and bring response
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        queryset = self.get_queryset().filter(project__pk=project_pk)
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        '''serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)'''
 
     def retrieve(self, request, pk=None, *args, **kwargs):
         project_id = kwargs.get('project_pk')
@@ -304,18 +306,17 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
 
     def update(self, request, pk=None, *args, **kwargs):
         issue = get_object_or_404(Issue, id=pk)
-        user = get_object_or_404(CustomUser, id=self.request.user.id)
-        self.permission_classes = [IsAuthor, IsContributor]
-        if issue and user:
-            assigned_contributor = issue.assigned_contributor
-            if user != assigned_contributor and user != issue.author:
-                return Response({'error': 'Not authorized'}, status=status.HTTP_401_UNAUTHORIZED)
-            serializer = self.get_serializer(instance=issue, data=request.data, partial=True)
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        else:
-            return Response({'error': 'Invalid request'}, status=status.HTTP_400_BAD_REQUEST)
+        if issue.author != request.user:
+            return Response({'error': 'User is not authorized'}, status=status.HTTP_401_UNAUTHORIZED)
+        serializer = self.get_serializer(instance=issue, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def destroy(self, request, pk=None, *args, **kwargs):
+        issue = get_object_or_404(Issue, id=pk)
+        if issue.author != request.user:
+            return Response({'error': 'User is not authorized'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 class CommentViewSet(viewsets.ModelViewSet):
@@ -323,23 +324,7 @@ class CommentViewSet(viewsets.ModelViewSet):
 
     queryset = Comment.objects.all()
     serializer_class = comment_serializers.CommentSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve', 'update']:
-            perm = [IsAuthorOrAssignedContributor]
-        elif self.action == 'destroy':
-            perm = [IsAuthor]
-        else:
-            perm = []
-        return [permission() for permission in perm]
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['author'] = self.request.user
-        context['issue_pk'] = self.kwargs['issue_pk']
-        context['request'] = self.request
-        return context
+    permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -348,16 +333,24 @@ class CommentViewSet(viewsets.ModelViewSet):
             return comment_serializers.CommentSerializer
         return comment_serializers.CommentSerializer
 
-    def create(self, request, *args, **kwargs):
+    def create(self, request, issue_pk):
         try:
-            Issue.objects.get(id=self.kwargs['issue_pk'])
+            issue = get_object_or_404(Issue, id=issue_pk)
         except Issue.DoesNotExist:
             return Response({'error': 'Issue does not exist'}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        if issue:
+            # test if connected user is in project contributor list
+            user = self.request.user
+            if not issue.project.contributors.filter(id=user.id).exists():
+                return Response({'error': 'Connected user unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+            else:
+                request.data['author'] = user.id
+                request.data['issue_ref'] = issue.id
+                serializer = self.get_serializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                serializer.save(author=user, issue_ref=issue)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def list(self, request, *args, **kwargs):
         # give list of every assigned Issue for the connected user about the project
@@ -366,25 +359,36 @@ class CommentViewSet(viewsets.ModelViewSet):
         # verify if connected user is project author or in issues assigned_contributor
         contributors = issue.project.contributors.all()
         if (request.user.pk != issue.project.author.pk) and (request.user not in contributors):
-            return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': 'access not authorized.'}, status=status.HTTP_401_UNAUTHORIZED)
         else:
             queryset = Comment.objects.filter(issue_ref=issue_id)
-            serializer = self.get_serializer(queryset, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+            else:
+                return Response({'error': 'no data'}, status=status.HTTP_404_NOT_FOUND)
 
-    def retrieve(self, request, pk=None, *args, **kwargs):
+    def retrieve(self, request, issue_pk=None, *args, **kwargs):
         '''detail a comment, need to give UUID'''
 
-        comment = get_object_or_404(Comment, pk=pk)
-        # verify if connected user is project author or in issues assigned_contributor
-        issue = comment.issue_ref
-        contributors = issue.project.contributors.all()
-        if (request.user.pk != issue.project.author.pk) and (request.user not in contributors):
-            return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-        else:
-            queryset = Comment.objects.filter(uuid=comment.uuid)
-            serializer = self.get_serializer(queryset, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+        try:
+            issue = get_object_or_404(Issue, pk=issue_pk)
+        except Issue.DoesNotExist:
+            return Response({'error': 'Issue does not exist'}, status=status.HTTP_404_NOT_FOUND)
+
+        if issue:
+            # test if connected user is in project contributor list
+            user = self.request.user
+            if not issue.project.contributors.filter(id=user.id).exists():
+                return Response({'error': 'Connected user unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+            else:
+                comment = get_object_or_404(Comment, pk=kwargs['pk'])
+                # verify if connected user is project author or in issues assigned_contributor
+                issue = comment.issue_ref
+                queryset = Comment.objects.filter(uuid=comment.uuid)
+                serializer = self.get_serializer(queryset, many=True)
+                return Response(serializer.data, status=status.HTTP_200_OK)
 
     def update(self, request, pk=None, *args, **kwargs):
         '''update description field'''
@@ -393,7 +397,9 @@ class CommentViewSet(viewsets.ModelViewSet):
             comment = Comment.objects.get(uuid=pk)
         except Comment.DoesNotExist:
             return Response({'error': 'Comment does not exist'}, status=status.HTTP_404_NOT_FOUND)
-
+        # Is connected_user allowed for this action ?
+        if self.request.user != comment.author:
+            return Response({'error': 'Connected user unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
         serializer = self.get_serializer(instance=comment, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -401,12 +407,9 @@ class CommentViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, pk=None, *args, **kwargs):
         '''Suppress a comment, need to give UUID'''
-
         comment = get_object_or_404(Comment, pk=pk)
         if comment:
-            # verify if connected user is project author or in issues assigned_contributor
-            issue = comment.issue_ref
-            if (request.user.pk != issue.project.author.pk):  # Is connected user  the comment author ?
+            if (request.user != comment.author):  # Is connected user  the comment author ?
                 return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)
             else:
                 try:
@@ -415,3 +418,5 @@ class CommentViewSet(viewsets.ModelViewSet):
                 except ProtectedError as error:
                     error_message = f'{error} : not able to delete recorded data'
                     return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({"error": "Comment not found"}, status=status.HTTP_404_NOT_FOUND)
