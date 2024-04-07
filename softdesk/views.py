@@ -23,13 +23,17 @@ class MultipleSerializerMixin:
 
 
 class CustomUserViewSet(viewsets.ModelViewSet):
+    '''User management ViewSet :
+        Only user can manage his (her) data
+        Minimal authorized age over 15 '''
+
     queryset = CustomUser.objects.all()
     serializer_class = customuser_serializers.CustomUserSerializer
     serializer_list_class = customuser_serializers.CustomUserListSerializer
     permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        if self.action == 'create':
+        if self.action == 'create':  # permit only user creation without authentication
             return []
         elif self.action == ['list', 'update', 'retrieve', 'destroy']:
             self.permission_classes = [IsAuthenticated]
@@ -42,6 +46,8 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         return self.serializer_class
 
     def create(self, request, *args, **kwargs):
+        '''Customer Creation'''
+        
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -49,6 +55,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         return Response(serializer.validated_data, status=status.HTTP_201_CREATED, headers=headers)
 
     def list(self, request, *args, **kwargs):
+        '''Give only active users list when authenticated'''
         queryset = CustomUser.objects.filter(is_active=True)
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -56,6 +63,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
 
     def retrieve(self, request, pk=None):
+        '''Give User details to only owner'''
         instance = get_object_or_404(self.queryset, pk=pk)
         if instance != request.user:
             return Response({'error': 'Not authorized.'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -64,6 +72,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def update(self, request, *args, **kwargs):
+        ''' Permit partial informations updates to only Owner'''
         instance = self.get_object()
         if instance != request.user:
             return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
@@ -74,6 +83,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
     def destroy(self, request, pk=None):
+        '''Only Owner is authorized to destroy'''
         instance = self.get_object()
         if instance != request.user:
             return Response({'error': 'Not authorized.'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -85,6 +95,12 @@ class CustomUserViewSet(viewsets.ModelViewSet):
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
+    ''' Project Management accessible to connected user
+        PROJECT_TYPES = "back-end",
+                        "front-end",
+                        "IOS",
+                        "Android" '''
+
     queryset = Project.objects.all()
     serializer_class = project_serializers.ProjectSerializer
     detail_serializer_class = project_serializers.ProjectDetailSerializer
@@ -108,7 +124,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         if request.user:
             data = request.data
-            data['contributors'].append(request.user.pk)
+            data['contributors'] = [(request.user.pk)]
             data['author'] = request.user.pk
         serializer = self.get_serializer(data=data, context={'request': request})
 
@@ -121,7 +137,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         if request.user.id is None:
             return Response({'error': 'not authorized'}, status=status.HTTP_401_UNAUTHORIZED)
-        queryset = self.get_queryset().filter(contributors__in=[request.user])
+        queryset = self.get_queryset().filter(contributors__in=[request.user]).order_by('id')
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -215,7 +231,7 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
                 return Response({f'error: {contributor_id} is not contributor'},
                                 status=status.HTTP_404_NOT_FOUND)
             if not project.contributors.filter(id=contributor_id).exists():
-                return Response(f'error: Contributor {contributor_id} not in project list',
+                return Response(f'error: Contributor {contributor_id} not in project contributors list',
                                 status=status.HTTP_404_NOT_FOUND)
             elif int(contributor_id) == project.author_id:
                 return Response({'error: You cannot suppress project author from contributors list'},
@@ -243,14 +259,14 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
         queryset = self.queryset.filter(project_id=project_pk)
         return queryset
 
-    def get_permissions(self):
+    '''def get_permissions(self):
         if self.action in ['list', 'retrieve', 'update']:
             perm = [IsAuthorOrAssignedContributor]
         elif self.action == 'destroy':
             perm = [IsAuthor]
         else:
             perm = []
-        return [permission() for permission in perm]
+        return [permission() for permission in perm]'''
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -284,7 +300,7 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
 
         # Now, we know, generate queryset result of all issues about project_id where connected user is assigned user
         # Serialize issues and bring response
-        queryset = self.get_queryset().filter(project__pk=project_pk)
+        queryset = self.get_queryset().filter(project__pk=project_pk).order_by('id')
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
