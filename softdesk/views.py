@@ -197,8 +197,9 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
         if request.user != project.author:
             return Response({'error': 'you are not project author'}, status=status.HTTP_401_UNAUTHORIZED)
         contributor_id = request.data.get('contributor_id')
-        if contributor_id is None:
-            return Response({'error: no contributor id found in request'}, status=status.HTTP_400_BAD_REQUEST)
+        contributor = CustomUser.objects.get(pk=contributor_id)
+        if (contributor_id is None) or (contributor.is_active is False):
+            return Response({'error: no valid contributor found in request'}, status=status.HTTP_400_BAD_REQUEST)
         else:
             try:
                 contributor = CustomUser.objects.get(pk=contributor_id)
@@ -362,35 +363,36 @@ class CommentViewSet(viewsets.ModelViewSet):
             return comment_serializers.CommentSerializer
         return comment_serializers.CommentSerializer
 
-    def create(self, request, issue_pk):
+    def create(self, request, *args, **kwargs):
+        issue_pk = self.kwargs.get('issue_pk')
         try:
             issue = get_object_or_404(Issue, id=issue_pk)
         except Issue.DoesNotExist:
-            return Response({'error': 'Issue does not exist'}, status=status.HTTP_404_NOT_FOUND)
-
-        if issue:
-            # test if connected user is in project contributor list
-            user = self.request.user
-            if not issue.project.contributors.filter(id=user.id).exists():
-                return Response({'error': 'Connected user unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
-            else:
-                request.data['author'] = user.id
-                request.data['issue_ref'] = issue.id
-                serializer = self.get_serializer(data=request.data)
-                serializer.is_valid(raise_exception=True)
-                serializer.save(author=user, issue_ref=issue)
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response({'error': 'Issue does not exist'}, status=status.HTTP_400_BAD_REQUEST)
+        # test if connected user is in project contributor list (is authorized)
+        user = self.request.user
+        if not issue.project.contributors.filter(id=user.id).exists():
+            return Response({'error': 'Connected user unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            data = request.data.copy()
+            data['author'] = user.id
+            data['issue_ref'] = issue.id
+            serializer = self.get_serializer(data=data)
+            serializer.is_valid(raise_exception=True)
+            serializer.save(author=user, issue_ref=issue)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def list(self, request, *args, **kwargs):
-        # give list of every assigned Issue for the connected user about the project
-        issue_id = kwargs['issue_pk']
-        issue = get_object_or_404(Issue, pk=issue_id)
+        '''give list of every assigned Issue for the connected user about the project'''
+
+        issue_pk = kwargs['issue_pk']
+        issue = get_object_or_404(Issue, pk=issue_pk)
         # verify if connected user is project author or in issues assigned_contributor
         contributors = issue.project.contributors.all()
         if (request.user.pk != issue.project.author.pk) and (request.user not in contributors):
             return Response({'error': 'access not authorized.'}, status=status.HTTP_401_UNAUTHORIZED)
         else:
-            queryset = Comment.objects.filter(issue_ref=issue_id)
+            queryset = Comment.objects.filter(issue_ref=issue_pk)
             page = self.paginate_queryset(queryset)
             if page is not None:
                 serializer = self.get_serializer(page, many=True)
@@ -401,23 +403,20 @@ class CommentViewSet(viewsets.ModelViewSet):
     def retrieve(self, request, issue_pk=None, *args, **kwargs):
         '''detail a comment, need to give UUID'''
 
-        try:
-            issue = get_object_or_404(Issue, pk=issue_pk)
-        except Issue.DoesNotExist:
-            return Response({'error': 'Issue does not exist'}, status=status.HTTP_404_NOT_FOUND)
+        issue_pk = self.kwargs['issue_pk']
+        issue = get_object_or_404(Issue, pk=issue_pk)
 
-        if issue:
-            # test if connected user is in project contributor list
-            user = self.request.user
-            if not issue.project.contributors.filter(id=user.id).exists():
-                return Response({'error': 'Connected user unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
-            else:
-                comment = get_object_or_404(Comment, pk=kwargs['pk'])
-                # verify if connected user is project author or in issues assigned_contributor
-                issue = comment.issue_ref
-                queryset = Comment.objects.filter(uuid=comment.uuid)
-                serializer = self.get_serializer(queryset, many=True)
-                return Response(serializer.data, status=status.HTTP_200_OK)
+        # test if connected user is in project contributor list
+        user = self.request.user
+        if not issue.project.contributors.filter(id=user.id).exists():
+            return Response({'error': 'Connected user unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            comment = get_object_or_404(Comment, pk=self.kwargs['pk'])
+            # verify if connected user is project author or in issues assigned_contributor
+            issue = comment.issue_ref
+            queryset = Comment.objects.filter(uuid=comment.uuid)
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
     def update(self, request, pk=None, *args, **kwargs):
         '''update description field'''
@@ -426,9 +425,13 @@ class CommentViewSet(viewsets.ModelViewSet):
             comment = Comment.objects.get(uuid=pk)
         except Comment.DoesNotExist:
             return Response({'error': 'Comment does not exist'}, status=status.HTTP_404_NOT_FOUND)
+
+        issue_pk = int(self.kwargs['issue_pk'])
+        if issue_pk != comment.issue_ref_id:
+            return Response({'error': 'Bad Issue or comment ref in url'}, status=status.HTTP_400_BAD_REQUEST)
         # Is connected_user allowed for this action ?
         if self.request.user != comment.author:
-            return Response({'error': 'Connected user unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'error': 'Connected user unauthorized'}, status=status.HTTP_403_FORBIDDEN)
         serializer = self.get_serializer(instance=comment, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -436,16 +439,17 @@ class CommentViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, pk=None, *args, **kwargs):
         '''Suppress a comment, need to give UUID'''
+        print('toto')
         comment = get_object_or_404(Comment, pk=pk)
-        if comment:
-            if (request.user != comment.author):  # Is connected user  the comment author ?
-                return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-            else:
-                try:
-                    comment.delete()
-                    return Response({'message': ('Destroy action ok')}, status=status.HTTP_204_NO_CONTENT)
-                except ProtectedError as error:
-                    error_message = f'{error} : not able to delete recorded data'
-                    return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST)
+        issue_pk = int(self.kwargs['issue_pk'])
+        if issue_pk != comment.issue_ref_id:
+            return Response({'error': 'Bad Issue or comment ref in url'}, status=status.HTTP_400_BAD_REQUEST)
+        if (request.user != comment.author):  # Is connected user  the comment author ?
+            return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)
         else:
-            return Response({"error": "Comment not found"}, status=status.HTTP_404_NOT_FOUND)
+            try:
+                comment.delete()
+                return Response({'message': ('Destroy action ok')}, status=status.HTTP_204_NO_CONTENT)
+            except ProtectedError as error:
+                error_message = f'{error} : not able to delete recorded data'
+                return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST)
