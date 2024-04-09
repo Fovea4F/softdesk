@@ -27,7 +27,7 @@ class IssueCreateSerializer(serializers.ModelSerializer):
     class Meta:
 
         model = Issue
-        fields = ['name', 'assigned_contributor', 'issue_type', 'priority', 'description']
+        fields = ['id', 'name', 'assigned_contributor', 'issue_type', 'priority', 'description']
 
     def create(self, validated_data, *args, **kwargs):
         project_id = int(self.context['view'].kwargs['project_pk'])

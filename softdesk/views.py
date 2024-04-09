@@ -133,9 +133,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.save(author=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    def list(self, request, *args, **kwargs):
+    def list(self, request):
         if request.user.id is None:
-            return Response({'error': 'not authorized'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': 'not authorized'}, status=status.HTTP_400_BAD_REQUEST)
         queryset = self.get_queryset().filter(contributors__in=[request.user]).order_by('id')
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -249,8 +249,8 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        pk = self.kwargs.get('pk')
-        queryset = self.queryset.filter(id=pk)
+        pk = self.kwargs['project_pk']
+        queryset = self.queryset.filter(project=pk)
         return queryset
 
     def get_serializer_class(self):
@@ -263,75 +263,89 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
     def create(self, request, *args, **kwargs):
         '''Create a new issue, in accordance with connected user access rights on project'''
         project_pk = self.kwargs['project_pk']
-        if self.author != self.request.user:
-            serializer = self.get_serializer(data=self.request.data)
-            serializer.is_valid(raise_exception=True)
-            serializer.save(author=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        else:
-            return Response({'error': 'bad request'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            project = Project.objects.get(pk=project_pk)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
+
+        contributors = project.contributors.all()
+        if self.request.user != project.author or self.request.user not in contributors:
+            return Response({'error': 'user not authorized'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = self.get_serializer(data=self.request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(author=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def list(self, request, *args, **kwargs):
         ''' Give list of every assigned Issue for the connected user about the project, if rights on it'''
 
-        pk = self.kwargs['project_pk']
-        if self.check_instance_rights(request, pk):
-            # Serialize issues and bring response
-            queryset = self.get_queryset().filter(project__pk=pk).order_by('id')
-            page = self.paginate_queryset(queryset)
-            if page is not None:
-                serializer = self.get_serializer(page, many=True)
-                return self.get_paginated_response(serializer.data)
+        project_pk = kwargs['project_pk']
+        try:
+            project = Project.objects.get(pk=project_pk)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project does not exist'}, status=status.HTTP_400_BAD_REQUEST)
+        # Serialize issues and bring response
+        contributors = project.contributors.all()
+        if self.request.user != project.author or self.request.user not in contributors:
+            return Response({'error': 'user not authorized'}, status=status.HTTP_403_FORBIDDEN)
+        queryset = self.get_queryset().filter(project__pk=project.pk).order_by('id')
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
 
     def retrieve(self, request, pk=None, *args, **kwargs):
         '''Give Issue Details '''
-        pk = self.kwargs['project_pk']
-        if self.check_instance_rights(request, pk):
-            '''if not self.check_instance_exists(pk):
-            return Response({'error': 'Instance does not exist'}, status=status.HTTP_404_NOT_FOUND)
         project_pk = kwargs.get('project_pk')
         try:
-            project = Project.objects.get(id=project_pk)
-            if (request.user.pk != project.author.pk
-                    and not project.issues_list.filter(assigned_contributor=request.user.pk).exists()):
-                # indicating that access is not authorized, along with a status code of 403 (Forbidden).
-                return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)
+            project = Project.objects.get(pk=project_pk)
         except Project.DoesNotExist:
-            return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)'''
-
-            queryset = self.get_queryset().filter(project__pk=pk)
-            serializer = self.get_serializer(queryset)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response({'error': 'Project does not exist'}, status=status.HTTP_400_BAD_REQUEST)
+        contributors = project.contributors.all()
+        if self.request.user != project.author or self.request.user not in contributors:
+            return Response({'error': 'user not authorized'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            Issue.objects.get(pk=self.kwargs.get('pk'))
+        except Issue.DoesNotExist:
+            return Response({'error': 'Issue not exist'}, status=status.HTTP_400_BAD_REQUEST)
+        queryset = Issue.objects.get(pk=pk)
+        serializer = self.get_serializer(queryset)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def update(self, request, pk=None, *args, **kwargs):
         '''Possible to update partially Issue'''
-        pk = self.kwargs['project_pk']
-        if self.check_instance_rights(request, pk):
-            '''try:
-                project = Project.objects.get(id=project_pk)
-                if (request.user.pk != project.author.pk
-                        and not project.issues_list.filter(assigned_contributor=request.user.pk).exists()):
-                    # indicating that access is not authorized, along with a status code of 403 (Forbidden).
-                    return Response({'error': 'access not authorized.'}, status=status.HTTP_403_FORBIDDEN)
-            except Project.DoesNotExist:
-                return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)'''
+        try:
+            project = Project.objects.get(pk=kwargs.get('project_pk'))
+            issues_list = project.issues_list.all()
+            if Issue.objects.get(pk=self.kwargs.get('pk')) not in issues_list:
+                return Response({'error': 'Issue not in Project List'}, status=status.HTTP_400_BAD_REQUEST)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project does not exist'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            issue = Issue.objects.get(pk=pk)
+        except Project.DoesNotExist:
+            return Response({'error': 'Issue does not exist'}, status=status.HTTP_400_BAD_REQUEST)
 
-            issue = get_object_or_404(Issue, id=pk)
-            serializer = self.get_serializer(instance=issue, data=request.data, partial=True)
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
+        if request.user != issue.author:
+            return Response({'error': 'user unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = self.get_serializer(instance=issue, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, pk=None, *args, **kwargs):
-        '''Suppress Issue : after controls'''
-        pk = self.kwargs['project_pk']
-        if self.check_instance_rights(request, pk):
-            issue = get_object_or_404(Issue, id=pk)
-            if issue.author != request.user:
-                return Response({'error': 'User is not authorized'}, status=status.HTTP_403_FORBIDDEN)
-            else:
-                issue.delete()
-                return Response({'message': ('Destroy action ok')}, status=status.HTTP_204_NO_CONTENT)
+        '''Suppress Issue : after request controls'''
+        project_pk = kwargs.get('project_pk')
+        try:
+            project = Project.objects.get(pk=project_pk)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project does not exist'}, status=status.HTTP_400_BAD_REQUEST)
+        contributors = project.contributors.all()
+        if self.request.user != project.author or self.request.user not in contributors:
+            return Response({'error': 'user not authorized'}, status=status.HTTP_403_FORBIDDEN)
+        issue = get_object_or_404(Issue, id=pk)
+        issue.delete()
+        return Response({'message': ('Destroy action ok')}, status=status.HTTP_204_NO_CONTENT)
 
 
 class CommentViewSet(viewsets.ModelViewSet):
