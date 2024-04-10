@@ -32,14 +32,6 @@ class CustomUserViewSet(viewsets.ModelViewSet):
     serializer_list_class = customuser_serializers.CustomUserListSerializer
     permission_classes = [IsAuthenticated]
 
-    '''def get_permissions(self):
-        if self.action == 'create':  # permit only user creation without authentication
-            return []
-        elif self.action == ['list', 'update', 'retrieve', 'destroy']:
-            self.permission_classes = [IsAuthenticated]
-
-        return super().get_permissions()'''
-
     def get_serializer_class(self):
         if self.action == 'list':
             return customuser_serializers.CustomUserListSerializer
@@ -47,7 +39,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         '''Customer Creation'''
-        
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -56,6 +48,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
 
     def list(self, request, *args, **kwargs):
         '''Give only active users list when authenticated'''
+
         queryset = CustomUser.objects.filter(is_active=True)
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -64,6 +57,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, pk=None):
         '''Give User details to only owner'''
+
         instance = get_object_or_404(self.queryset, pk=pk)
         if instance != request.user:
             return Response({'error': 'Not authorized.'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -73,6 +67,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
 
     def update(self, request, *args, **kwargs):
         ''' Permit partial informations updates to only Owner'''
+
         instance = self.get_object()
         if instance != request.user:
             return Response({'error': 'Not authorized.'}, status=status.HTTP_403_FORBIDDEN)
@@ -84,6 +79,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, pk=None):
         '''Only Owner is authorized to destroy'''
+
         instance = self.get_object()
         if instance != request.user:
             return Response({'error': 'Not authorized.'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -95,7 +91,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
-    ''' Project Management accessible to connected user
+    ''' Project Management accessible to connected owner
         PROJECT_TYPES = "back-end",
                         "front-end",
                         "IOS",
@@ -122,6 +118,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return project_serializers.ProjectSerializer
 
     def create(self, request, *args, **kwargs):
+        ''' Project creation only permitted to connected user'''
+
         if request.user:
             data = request.data
             data['contributors'] = [(request.user.pk)]
@@ -134,6 +132,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def list(self, request):
+        '''List is accessible to project contributors'''
+
         if request.user.id is None:
             return Response({'error': 'not authorized'}, status=status.HTTP_400_BAD_REQUEST)
         queryset = self.get_queryset().filter(contributors__in=[request.user]).order_by('id')
@@ -143,6 +143,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
 
     def update(self, request, pk=None, *args, **kwargs):
+        '''Only owner can manage a project'''
+
         project = get_object_or_404(Project, id=pk)
         user = get_object_or_404(CustomUser, id=self.request.user.id)
         if user != project.author:
@@ -153,6 +155,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def retrieve(self, request, pk=None, *args, **kwargs):
+        '''List is accessible to project contributors'''
+
         project = get_object_or_404(Project, id=pk)
         user = get_object_or_404(CustomUser, id=self.request.user.id)
         if project and user:
@@ -165,6 +169,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, pk=None, *args, **kwargs):
+        '''Only owner can delete a project'''
+
         project = get_object_or_404(Project, id=pk)
         user = get_object_or_404(CustomUser, id=self.request.user.id)
         if user != project.author:
@@ -190,6 +196,8 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='add')
     def contributor_add(self, request, project_id, pk=None):
+        '''Adds contributor to project Contributors list (with controls)'''
+
         try:
             project = Project.objects.get(pk=project_id)
         except Project.DoesNotExist:
@@ -213,6 +221,7 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='delete')
     def contributor_delete(self, request, project_id, pk=None):
+        '''Remove contributor from project Contributors list (with controls)'''
 
         try:
             project = Project.objects.get(pk=project_id)
@@ -263,6 +272,7 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
 
     def create(self, request, *args, **kwargs):
         '''Create a new issue, in accordance with connected user access rights on project'''
+
         project_pk = self.kwargs['project_pk']
         try:
             project = Project.objects.get(pk=project_pk)
@@ -296,7 +306,8 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
             return self.get_paginated_response(serializer.data)
 
     def retrieve(self, request, pk=None, *args, **kwargs):
-        '''Give Issue Details '''
+        '''Gives Issue Details to project contributors'''
+
         project_pk = kwargs.get('project_pk')
         try:
             project = Project.objects.get(pk=project_pk)
@@ -314,7 +325,7 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def update(self, request, pk=None, *args, **kwargs):
-        '''Possible to update partially Issue'''
+        '''Possible to update partially Issue to only owner'''
         try:
             project = Project.objects.get(pk=kwargs.get('project_pk'))
             issues_list = project.issues_list.all()
@@ -326,9 +337,9 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
             issue = Issue.objects.get(pk=pk)
         except Project.DoesNotExist:
             return Response({'error': 'Issue does not exist'}, status=status.HTTP_400_BAD_REQUEST)
-
         if request.user != issue.author:
             return Response({'error': 'user unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = self.get_serializer(instance=issue, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -336,6 +347,7 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
 
     def destroy(self, request, pk=None, *args, **kwargs):
         '''Suppress Issue : after request controls'''
+
         project_pk = kwargs.get('project_pk')
         try:
             project = Project.objects.get(pk=project_pk)
@@ -350,7 +362,7 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
 
 
 class CommentViewSet(viewsets.ModelViewSet):
-    '''Comment are tickets written by any Project contributor'''
+    '''Comment are tickets related to Issues written by any Project contributor'''
 
     queryset = Comment.objects.all()
     serializer_class = comment_serializers.CommentSerializer
@@ -364,6 +376,9 @@ class CommentViewSet(viewsets.ModelViewSet):
         return comment_serializers.CommentSerializer
 
     def create(self, request, *args, **kwargs):
+        '''Comments create a story about Issues bugs, features 
+        or tasks tickets avancement, created by contributors'''
+
         issue_pk = self.kwargs.get('issue_pk')
         try:
             issue = get_object_or_404(Issue, id=issue_pk)
@@ -419,7 +434,7 @@ class CommentViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
 
     def update(self, request, pk=None, *args, **kwargs):
-        '''update description field'''
+        '''update description field, permitted to only owner'''
 
         try:
             comment = Comment.objects.get(uuid=pk)
@@ -439,6 +454,7 @@ class CommentViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, pk=None, *args, **kwargs):
         '''Suppress a comment, need to give UUID'''
+
         print('toto')
         comment = get_object_or_404(Comment, pk=pk)
         issue_pk = int(self.kwargs['issue_pk'])

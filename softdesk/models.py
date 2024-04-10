@@ -5,6 +5,7 @@ from django.contrib.auth.models import AbstractUser
 
 
 class CustomUser(AbstractUser):
+    '''User identity informations model'''
 
     birthday = models.DateField(default=None, blank=False)
     can_be_contacted = models.BooleanField(default=False, null=False, verbose_name='Allowed contact')
@@ -17,6 +18,7 @@ class CustomUser(AbstractUser):
 
 
 class Project(models.Model):
+    '''Project informations: targets Customers applications'''
 
     PROJECT_TYPES = [
         ('back-end', 'back-end'),
@@ -41,7 +43,7 @@ class Project(models.Model):
 
 
 class Issue(models.Model):
-
+    '''Contains Issues informations related to Projects'''
     PRIORITY = [
         ('LOW', 'LOW'),
         ('MEDIUM', 'MEDIUM'),
@@ -72,7 +74,7 @@ class Issue(models.Model):
 
 
 class Comment(models.Model):
-
+    ''' Ticket model , related to Issues'''
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, unique=True, editable=False)
     author = models.ForeignKey(to=CustomUser, on_delete=models.CASCADE, related_name='comment_author')
     issue_ref = models.ForeignKey(to=Issue, on_delete=models.CASCADE, related_name='comment_list')
