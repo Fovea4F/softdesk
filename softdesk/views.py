@@ -33,7 +33,7 @@ class CustomUserViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'create':  # permit only user creation without authentication
-            return [AllowAny]
+            return []
         elif self.action == ['list', 'update', 'retrieve', 'destroy']:
             self.permission_classes = [IsAuthenticated]
 
