@@ -9,7 +9,6 @@ from rest_framework.decorators import action
 
 from . import customuser_serializers, project_serializers, issue_serializers, comment_serializers
 from .models import CustomUser, Project, Issue, Comment
-# from .permissions import IsAuthor, IsAuthorOrAssignedContributor
 
 
 class MultipleSerializerMixin:
