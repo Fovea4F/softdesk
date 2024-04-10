@@ -2,14 +2,14 @@ from django.shortcuts import get_object_or_404
 from django.db.models.deletion import ProtectedError
 
 from rest_framework import viewsets, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.mixins import UpdateModelMixin, RetrieveModelMixin
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
 from . import customuser_serializers, project_serializers, issue_serializers, comment_serializers
 from .models import CustomUser, Project, Issue, Comment
-from .permissions import IsAuthor, IsAuthorOrAssignedContributor
+# from .permissions import IsAuthor, IsAuthorOrAssignedContributor
 
 
 class MultipleSerializerMixin:
@@ -31,6 +31,14 @@ class CustomUserViewSet(viewsets.ModelViewSet):
     serializer_class = customuser_serializers.CustomUserSerializer
     serializer_list_class = customuser_serializers.CustomUserListSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action == 'create':  # permit only user creation without authentication
+            return [AllowAny]
+        elif self.action == ['list', 'update', 'retrieve', 'destroy']:
+            self.permission_classes = [IsAuthenticated]
+
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action == 'list':
