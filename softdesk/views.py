@@ -2,7 +2,7 @@ from django.shortcuts import get_object_or_404
 from django.db.models.deletion import ProtectedError
 
 from rest_framework import viewsets, status
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.mixins import UpdateModelMixin, RetrieveModelMixin
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -138,12 +138,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.save(author=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    def list(self, request):
-        '''List is accessible to project contributors'''
+    def list(self, request, *args, **kwargs):
+        '''every project where connected user is contributor'''
 
         if request.user.id is None:
-            return Response({'error': 'not authorized'}, status=status.HTTP_400_BAD_REQUEST)
-        queryset = self.get_queryset().filter(contributors__in=[request.user]).order_by('id')
+            return Response({'error': 'No user given'}, status=status.HTTP_400_BAD_REQUEST)
+        get_object_or_404(CustomUser, id=self.request.user.id)
+
+        queryset = request.user.contributions.all().order_by('id')
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -202,11 +204,11 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     @action(detail=False, methods=['post'], url_path='add')
-    def contributor_add(self, request, project_id, pk=None):
+    def contributor_add(self, request, project_pk, pk=None):
         '''Adds contributor to project Contributors list (with controls)'''
 
         try:
-            project = Project.objects.get(pk=project_id)
+            project = Project.objects.get(pk=project_pk)
         except Project.DoesNotExist:
             return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
         if request.user != project.author:
@@ -227,11 +229,11 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='delete')
-    def contributor_delete(self, request, project_id, pk=None):
+    def contributor_delete(self, request, project_pk, pk=None):
         '''Remove contributor from project Contributors list (with controls)'''
 
         try:
-            project = Project.objects.get(pk=project_id)
+            project = Project.objects.get(pk=project_pk)
         except Project.DoesNotExist:
             return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
         if request.user != project.author:
@@ -287,24 +289,25 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
             return Response({'error': 'Project does not exist'}, status=status.HTTP_404_NOT_FOUND)
 
         contributors = project.contributors.all()
-        if self.request.user != project.author or self.request.user not in contributors:
+        if self.request.user not in contributors:
             return Response({'error': 'user not authorized'}, status=status.HTTP_403_FORBIDDEN)
         serializer = self.get_serializer(data=self.request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save(author=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    def list(self, request, *args, **kwargs):
+    def list(self, request, project_pk, *args, **kwargs):
         ''' Give list of every assigned Issue for the connected user about the project, if rights on it'''
 
-        project_pk = kwargs['project_pk']
         try:
-            project = Project.objects.get(pk=project_pk)
+            project = get_object_or_404(Project.objects.filter(pk=project_pk))
         except Project.DoesNotExist:
             return Response({'error': 'Project does not exist'}, status=status.HTTP_400_BAD_REQUEST)
         # Serialize issues and bring response
-        contributors = project.contributors.all()
-        if self.request.user != project.author or self.request.user not in contributors:
+
+        # Is connected user project contributor ?
+        contributor = project.contributors.filter(username=request.user).first()
+        if not contributor:
             return Response({'error': 'user not authorized'}, status=status.HTTP_403_FORBIDDEN)
         queryset = self.get_queryset().filter(project__pk=project.pk).order_by('id')
         page = self.paginate_queryset(queryset)
@@ -321,7 +324,7 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
         except Project.DoesNotExist:
             return Response({'error': 'Project does not exist'}, status=status.HTTP_400_BAD_REQUEST)
         contributors = project.contributors.all()
-        if self.request.user != project.author or self.request.user not in contributors:
+        if request.user not in contributors:
             return Response({'error': 'user not authorized'}, status=status.HTTP_403_FORBIDDEN)
         try:
             Issue.objects.get(pk=self.kwargs.get('pk'))
@@ -336,14 +339,15 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
         try:
             project = Project.objects.get(pk=kwargs.get('project_pk'))
             issues_list = project.issues_list.all()
-            if Issue.objects.get(pk=self.kwargs.get('pk')) not in issues_list:
-                return Response({'error': 'Issue not in Project List'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                issue = Issue.objects.get(pk=self.kwargs.get('pk'))
+            except Issue.DoesNotExist:
+                return Response({'error': 'Issue does not exist'}, status=status.HTTP_400_BAD_REQUEST)
+            if issue not in issues_list:
+                return Response({'error': 'Issue not in project issues list'}, status=status.HTTP_400_BAD_REQUEST)
         except Project.DoesNotExist:
             return Response({'error': 'Project does not exist'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            issue = Issue.objects.get(pk=pk)
-        except Project.DoesNotExist:
-            return Response({'error': 'Issue does not exist'}, status=status.HTTP_400_BAD_REQUEST)
+
         if request.user != issue.author:
             return Response({'error': 'user unauthorized'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -383,7 +387,7 @@ class CommentViewSet(viewsets.ModelViewSet):
         return comment_serializers.CommentSerializer
 
     def create(self, request, *args, **kwargs):
-        '''Comments create a story about Issues bugs, features 
+        '''Comments create a story about Issues bugs, features
         or tasks tickets avancement, created by contributors'''
 
         issue_pk = self.kwargs.get('issue_pk')

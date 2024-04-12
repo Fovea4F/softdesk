@@ -44,7 +44,7 @@ schema_view = get_schema_view(
 router = SimpleRouter()
 router.register('users', CustomUserViewSet, basename='users')
 router.register('project', ProjectViewSet, basename='project')
-router.register(r'project/(?P<project_id>\d+)/contributors', ProjectContributorsViewSet,
+router.register(r'project/(?P<project_pk>\d+)/contributors', ProjectContributorsViewSet,
                 basename='project-contributors')
 router.register(r'project/(?P<project_pk>\d+)/issue', IssueViewSet, basename='issue')
 router.register(r'issue/(?P<issue_pk>\d+)/comment', CommentViewSet, basename='comment')

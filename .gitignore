@@ -1,0 +1,4 @@
+.history-poetry
+./__pycache__/*.pyc
+tests
+.venv
