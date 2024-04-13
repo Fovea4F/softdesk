@@ -141,7 +141,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         '''every project where connected user is contributor'''
 
-        get_object_or_404(CustomUser, id=self.request.user.id)  # Test if user is in request
+        get_object_or_404(CustomUser, id=self.request.user.id)
+
         queryset = request.user.contributions.all().order_by('id')
         page = self.paginate_queryset(queryset)
         if page is not None:
