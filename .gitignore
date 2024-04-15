@@ -1,3 +1,9 @@
-.history-poetry
+.history/*.*
+**/.venv
+**/.vscode
 *.pyc
-.venv
+**/.cspell
+.vscode/
+./Pip*.*
+**/.history-poetry
+**/__pycache__
