@@ -131,7 +131,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
             data = request.data
             data['contributors'] = [(request.user.pk)]
             data['author'] = request.user.pk
-        serializer = self.get_serializer(data=data, context={'request': request})
+        serializer = self.get_serializer(
+            data=data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         self.check_permissions(request)
         # set connected user as author
@@ -141,7 +142,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         '''every project where connected user is contributor'''
 
-        get_object_or_404(CustomUser, id=self.request.user.id)  # Test if user is in request
+        # Test if user is in request
+        get_object_or_404(CustomUser, id=self.request.user.id)
         queryset = request.user.contributions.all().order_by('id')
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -155,7 +157,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
         user = get_object_or_404(CustomUser, id=self.request.user.id)
         if user != project.author:
             return Response({'error': 'you are not project author'}, status=status.HTTP_401_UNAUTHORIZED)
-        serializer = self.get_serializer(project, data=request.data, partial=True)
+        serializer = self.get_serializer(
+            project, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -211,9 +214,12 @@ class ProjectContributorsViewSet(viewsets.ModelViewSet):
         if request.user != project.author:
             return Response({'error': 'you are not project author'}, status=status.HTTP_401_UNAUTHORIZED)
         contributor_id = request.data.get('contributor_id')
-        contributor = CustomUser.objects.get(pk=contributor_id)
-        if (contributor_id is None) or (contributor.is_active is False):
-            return Response({'error: no valid contributor found in request'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            contributor = CustomUser.objects.get(pk=contributor_id)
+        except CustomUser.DoesNotExist:
+            return Response({'error': 'Given contributor unknown'}, status=status.HTTP_404_NOT_FOUND)
+        if contributor.is_active is False:
+            return Response({'error: Contributor is not active'}, status=status.HTTP_400_BAD_REQUEST)
         else:
             try:
                 contributor = CustomUser.objects.get(pk=contributor_id)
@@ -303,7 +309,8 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
         # Serialize issues and bring response
 
         # Is connected user project contributor ?
-        contributor = project.contributors.filter(username=request.user).first()
+        contributor = project.contributors.filter(
+            username=request.user).first()
         if not contributor:
             return Response({'error': 'user not authorized'}, status=status.HTTP_403_FORBIDDEN)
         queryset = self.get_queryset().filter(project__pk=project.pk).order_by('id')
@@ -348,7 +355,8 @@ class IssueViewSet(viewsets.ModelViewSet, RetrieveModelMixin, UpdateModelMixin):
         if request.user != issue.author:
             return Response({'error': 'user unauthorized'}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = self.get_serializer(instance=issue, data=request.data, partial=True)
+        serializer = self.get_serializer(
+            instance=issue, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -455,7 +463,8 @@ class CommentViewSet(viewsets.ModelViewSet):
         # Is connected_user allowed for this action ?
         if self.request.user != comment.author:
             return Response({'error': 'Connected user unauthorized'}, status=status.HTTP_403_FORBIDDEN)
-        serializer = self.get_serializer(instance=comment, data=request.data, partial=True)
+        serializer = self.get_serializer(
+            instance=comment, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
