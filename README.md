@@ -22,5 +22,8 @@ Allez sur le site de **Poetry** pour le téléchargement et l'installation de la
   Lancer la commande **python manage\.py runserver "xxxx"** afin de démarrer le serveur web en écoute par défaut http://localhost:**xxxx**.
 
 ## Aide à l'utilisation
+Une base de données est également livrée avec le projet.
+Cette base contient déjà des utilisateurs, des projets, des Issues et des Comments.
+Les utilisateurs fictifs sont identifiés par leur adresse de messagerie (unique). Le mot de passe associé est **'MP@ssw0rd'**
 
 Afin de mieux appréhender la solution, il vous est possible d'implémenter swagger, vous permettant ainsi la découverte de la documentation de chaque point de terminaison (**End Point**) de l'Interface de programmation de l'application (**API**).
