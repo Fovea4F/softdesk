@@ -6,19 +6,21 @@ SoftDesk a mis en place une nouvelle équipe chargée de ce projet et vous avez 
 
 Le projet permet d'appréhender la mise en œuvre d'une API RESTFULL sécurisée basée sur DJANGO Rest.
 
-# Installation
+## Installation
 
-## 1. Prérequis
+### 1. Prérequis
 
-Il est nécessaire d'installer Poetry afin de déployer ce projet.
-Allez sur le site de Poetry pour le téléchargement et l'installation de la dernière version
+Il est nécessaire d'installer **Poetry** afin de déployer ce projet.
+Allez sur le site de **Poetry** pour le téléchargement et l'installation de la dernière version
 
-## 2. Déploiement du code
+### 2. Déploiement du code
 
 - Décompresser le zip téléchargé depuis Github sur une nouvelle arborescence locale.
 - Le fichier **pyproject.toml** contient la liste des paquets de dépendance.
-- Lancer la commande **Poetry install** : Les paquets correspondant au contenu du fichier **.toml** vont être téléchargés et installés.
+- Lancer la commande **Poetry install** depuis le dossier créé pour l'application. Les paquets correspondant au contenu du fichier **.toml** vont être téléchargés et installés.
+  Lancer la commande **Poetry shell** afin de démarrer l'environnement virtuel Poetry.
+  Lancer la commande **python manage\.py runserver "xxxx"** afin de démarrer le serveur web en écoute par défaut http://localhost:**xxxx**.
 
-## 3. Lancement du serveur
+## Aide à l'utilisation
 
-- La commande **python manage\.py runserver "xxxx"** permet de démarrer le serveur web en écoute sur le port **"xxxx"**
+Afin de mieux appréhender la solution, il vous est possible d'implémenter swagger, vous permettant ainsi la découverte de la documentation de chaque point de terminaison (**End Point**) de l'Interface de programmation de l'application (**API**).
